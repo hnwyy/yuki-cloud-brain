@@ -30,6 +30,7 @@ async def root():
 def text_to_speech(text: str) -> str:
     """Convert text to base64 audio using ElevenLabs."""
     if not ELEVENLABS_API_KEY:
+        print("⚠️ ElevenLabs API key not found")
         return None
 
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}"
@@ -42,32 +43,22 @@ def text_to_speech(text: str) -> str:
         "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}
     }
 
-    response = requests.post(url, json=body, headers=headers)
-    if response.status_code != 200:
-        return None
-
-    # Convert audio bytes → base64 string
-    return base64.b64encode(response.content).decode("utf-8")
-
-@app.post("/chat")
-async def chat(user_message: UserMessage):
     try:
-        completion = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": YUKI_SYSTEM_PROMPT},
-                {"role": "user", "content": user_message.text}
-            ]
-        )
-        reply = completion.choices[0].message.content
+        response = requests.post(url, json=body, headers=headers)
 
-        # ✅ Generate TTS audio
-        audio_b64 = text_to_speech(reply)
+        # 🔎 Debugging logs
+        print("🔊 ElevenLabs status:", response.status_code)
+        try:
+            print("🔊 ElevenLabs body:", response.json())
+        except Exception:
+            print("🔊 ElevenLabs raw:", response.text)
 
-        return JSONResponse(content={
-            "response": reply,
-            "audio": audio_b64
-        })
+        if response.status_code != 200:
+            return None
+
+        # Convert audio bytes → base64 string
+        return base64.b64encode(response.content).decode("utf-8")
 
     except Exception as e:
-        return JSONResponse(content={"error": str(e)})
+        print("❌ ElevenLabs request failed:", str(e))
+        return None
