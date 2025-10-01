@@ -2,18 +2,18 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from openai import OpenAI
-import requests, os
+import requests, os, json
 from datetime import datetime
 
 # ✅ Create FastAPI app
-app = FastAPI(title="Yuki Cloud Brain", version="2.1")
+app = FastAPI(title="Yuki Cloud Brain", version="2.2")
 
 # ✅ Initialize OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # ✅ ElevenLabs setup
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-VOICE_ID = "EXAVITQu4vr4xnSDxMaL"  # replace with your chosen ElevenLabs voice
+VOICE_ID = "EXAVITQu4vr4xnSDxMaL"  # replace with your chosen ElevenLabs voice ID
 
 # ✅ OpenWeather setup
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
@@ -98,13 +98,14 @@ async def chat(user_message: UserMessage):
                 if event.type == "token":
                     full_text.append(event.token)
 
-        reply = "".join(full_text)
+        reply = "".join(full_text).strip()
         return JSONResponse(content={"response": reply})
 
     except Exception as e:
+        print("❌ Chat error:", str(e))
         return JSONResponse(content={"error": str(e)})
 
-## ✅ TTS endpoint (convert text → audio file, then stream back)
+# ✅ TTS endpoint (convert text → audio file, then stream back)
 @app.post("/tts")
 async def tts(req: TTSRequest):
     text = req.text
@@ -121,15 +122,21 @@ async def tts(req: TTSRequest):
     }
     body = {
         "text": text,
-        "model_id": "eleven_multilingual_v2",  # more reliable model
+        "model_id": "eleven_multilingual_v2",  # stable model
         "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}
     }
 
-    # Request the full MP3
-    r = requests.post(url, json=body, headers=headers)
-    if r.status_code != 200:
-        print("❌ ElevenLabs error:", r.text)
-        return JSONResponse(content={"error": r.text})
+    try:
+        # ✅ Use json.dumps so text is always escaped properly
+        r = requests.post(url, data=json.dumps(body), headers=headers)
 
-    # Send full MP3 back
-    return StreamingResponse(iter([r.content]), media_type="audio/mpeg")
+        if r.status_code != 200:
+            print("❌ ElevenLabs error:", r.text)
+            return JSONResponse(content={"error": r.text})
+
+        print(f"✅ Got audio from ElevenLabs ({len(r.content)} bytes)")
+        return StreamingResponse(iter([r.content]), media_type="audio/mpeg")
+
+    except Exception as e:
+        print("❌ TTS request failed:", str(e))
+        return JSONResponse(content={"error": str(e)})
