@@ -86,7 +86,7 @@ async def chat(user_message: UserMessage):
             reply = get_weather()
             return JSONResponse(content={"response": reply})
 
-        # ✅ GPT streaming
+        # ✅ GPT streaming (OpenAI 2.0.1 SDK style)
         full_text = []
         with client.chat.completions.stream(
             model="gpt-4o-mini",
