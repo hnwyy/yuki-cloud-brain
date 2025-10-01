@@ -1,32 +1,35 @@
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from openai import OpenAI
-import requests, os, base64
+import requests, os
 from datetime import datetime
 
 # ✅ Create FastAPI app
-app = FastAPI(title="Yuki Cloud Brain", version="1.3")
+app = FastAPI(title="Yuki Cloud Brain", version="2.0")
 
 # ✅ Initialize OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # ✅ ElevenLabs setup
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-VOICE_ID = "EXAVITQu4vr4xnSDxMaL"  # replace with your ElevenLabs voice ID
+VOICE_ID = "EXAVITQu4vr4xnSDxMaL"  # replace with your chosen ElevenLabs voice
 
 # ✅ OpenWeather setup
-WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")  # set this in Render
+WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
 
-# ✅ Request model
+# ✅ Request models
 class UserMessage(BaseModel):
+    text: str
+
+class TTSRequest(BaseModel):
     text: str
 
 # ✅ System prompt
 YUKI_SYSTEM_PROMPT = """
 You are Yuki, a cheerful, curious, and supportive AI companion.
 Speak naturally like a human friend, not like a chatbot.
-When telling stories, keep them under 500 words, and split them into short
+When telling stories, keep them under 500 words, and split into short
 paragraphs of 2–3 sentences each, as if pausing between chapters so they can be spoken smoothly.
 If the story is long, break it into multiple parts and say something like,
 ‘Would you like me to continue with the next part?’
@@ -39,7 +42,7 @@ async def root():
 # ✅ Time API
 def get_current_time():
     try:
-        # Force to Central Time (Wausau, WI is in Central)
+        # Central Time (Wausau, WI is in Central)
         response = requests.get("http://worldtimeapi.org/api/timezone/America/Chicago")
         if response.status_code == 200:
             data = response.json()
@@ -52,7 +55,6 @@ def get_current_time():
 
 # ✅ Weather API (always Wausau, WI)
 def get_weather(units: str = "imperial"):
-    WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
     if not WEATHER_API_KEY:
         return "⚠️ Weather API key not set"
 
@@ -68,72 +70,64 @@ def get_weather(units: str = "imperial"):
         print("❌ Weather API failed:", str(e))
     return "⚠️ Could not fetch weather right now."
 
-# ✅ TTS with chunking
-def text_to_speech_chunks(text: str) -> list[str]:
-    if not ELEVENLABS_API_KEY:
-        print("⚠️ ElevenLabs API key missing")
-        return []
-
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}"
-    headers = {
-        "xi-api-key": ELEVENLABS_API_KEY,
-        "Content-Type": "application/json"
-    }
-
-    chunks = [c.strip() for c in text.split(". ") if c.strip()]
-    audio_clips = []
-
-    for i, chunk in enumerate(chunks, start=1):
-        body = {
-            "text": chunk,
-            "model_id": "eleven_flash_v2_5",
-            "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}
-        }
-
-        try:
-            response = requests.post(url, json=body, headers=headers, timeout=30)
-            print(f"🔊 ElevenLabs chunk {i}/{len(chunks)}: {response.status_code}")
-
-            if response.status_code == 200:
-                audio_clips.append(base64.b64encode(response.content).decode("utf-8"))
-            else:
-                print("❌ ElevenLabs error:", response.text)
-        except Exception as e:
-            print(f"❌ ElevenLabs request failed on chunk {i}:", str(e))
-
-    return audio_clips
-
-# ✅ Chat endpoint
+# ✅ Chat endpoint (returns text only)
 @app.post("/chat")
 async def chat(user_message: UserMessage):
     try:
         user_text = user_message.text.lower()
 
-        # Time
+        # Special cases
         if "time" in user_text:
             current_time = get_current_time()
             reply = f"The current time is {current_time}" if current_time else "Sorry, I couldn't fetch the time."
-            audio_clips = text_to_speech_chunks(reply)
-            return JSONResponse(content={"response": reply, "audio": audio_clips})
+            return JSONResponse(content={"response": reply})
 
-        # Weather (always Wausau)
         if "weather" in user_text:
             reply = get_weather()
-            audio_clips = text_to_speech_chunks(reply)
-            return JSONResponse(content={"response": reply, "audio": audio_clips})
+            return JSONResponse(content={"response": reply})
 
-        # GPT default
-        completion = client.chat.completions.create(
+        # GPT streaming
+        full_text = []
+        with client.chat.completions.stream(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": YUKI_SYSTEM_PROMPT},
                 {"role": "user", "content": user_message.text}
             ]
-        )
-        reply = completion.choices[0].message.content
-        audio_clips = text_to_speech_chunks(reply)
+        ) as stream:
+            for chunk in stream:
+                delta = chunk.choices[0].delta.content or ""
+                if delta:
+                    full_text.append(delta)
 
-        return JSONResponse(content={"response": reply, "audio": audio_clips})
+        reply = "".join(full_text)
+        return JSONResponse(content={"response": reply})
 
     except Exception as e:
         return JSONResponse(content={"error": str(e)})
+
+# ✅ TTS endpoint (convert text → audio stream)
+@app.post("/tts")
+async def tts(req: TTSRequest):
+    text = req.text
+    if not text:
+        return JSONResponse(content={"error": "No text provided"})
+
+    def elevenlabs_stream(text: str):
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}/stream"
+        headers = {
+            "xi-api-key": ELEVENLABS_API_KEY,
+            "Content-Type": "application/json"
+        }
+        body = {
+            "text": text,
+            "model_id": "eleven_flash_v2_5",
+            "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}
+        }
+
+        with requests.post(url, json=body, headers=headers, stream=True) as r:
+            for chunk in r.iter_content(chunk_size=1024):
+                if chunk:
+                    yield chunk
+
+    return StreamingResponse(elevenlabs_stream(text), media_type="audio/mpeg")
