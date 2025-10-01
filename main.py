@@ -104,7 +104,7 @@ async def chat(user_message: UserMessage):
     except Exception as e:
         return JSONResponse(content={"error": str(e)})
 
-# ✅ TTS endpoint (convert text → audio file, then stream back)
+## ✅ TTS endpoint (convert text → audio file, then stream back)
 @app.post("/tts")
 async def tts(req: TTSRequest):
     text = req.text
@@ -121,14 +121,15 @@ async def tts(req: TTSRequest):
     }
     body = {
         "text": text,
-        "model_id": "eleven_multilingual_v2",  # more stable than flash
+        "model_id": "eleven_multilingual_v2",  # more reliable model
         "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}
     }
 
+    # Request the full MP3
     r = requests.post(url, json=body, headers=headers)
     if r.status_code != 200:
         print("❌ ElevenLabs error:", r.text)
         return JSONResponse(content={"error": r.text})
 
-    # Send full MP3 response to client
+    # Send full MP3 back
     return StreamingResponse(iter([r.content]), media_type="audio/mpeg")
