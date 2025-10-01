@@ -47,30 +47,20 @@ def get_current_time():
         print("❌ Time API failed:", str(e))
     return None
 
-# ✅ Weather API
-def get_location_from_ip():
-    try:
-        response = requests.get("http://ip-api.com/json/")
-        if response.status_code == 200:
-            data = response.json()
-            return data.get("city")
-    except Exception as e:
-        print("❌ Location API failed:", str(e))
-    return None
-
-def get_weather(city: str = "New York", units: str = "imperial"):
+# ✅ Weather API (always Wausau, WI)
+def get_weather(units: str = "imperial"):
     WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
     if not WEATHER_API_KEY:
         return "⚠️ Weather API key not set"
 
     try:
-        url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API_KEY}&units={units}"
+        url = f"http://api.openweathermap.org/data/2.5/weather?q=Wausau,US&appid={WEATHER_API_KEY}&units={units}"
         response = requests.get(url)
         if response.status_code == 200:
             data = response.json()
             temp = data["main"]["temp"]
             desc = data["weather"][0]["description"]
-            return f"The weather in {city} is {desc} with {temp}°F."
+            return f"The weather in Wausau, Wisconsin is {desc} with {temp}°F."
     except Exception as e:
         print("❌ Weather API failed:", str(e))
     return "⚠️ Could not fetch weather right now."
@@ -123,21 +113,9 @@ async def chat(user_message: UserMessage):
             audio_clips = text_to_speech_chunks(reply)
             return JSONResponse(content={"response": reply, "audio": audio_clips})
 
-        # Weather
+        # Weather (always Wausau)
         if "weather" in user_text:
-            # Try to detect a city in the user's request
-            city = None
-            words = user_text.split()
-            for i, word in enumerate(words):
-                if word.lower() == "in" and i + 1 < len(words):
-                    city = words[i + 1].capitalize()
-                    break
-
-            # If no city was given, detect from IP
-            if not city:
-                city = get_location_from_ip() or "New York"
-
-            reply = get_weather(city=city)
+            reply = get_weather()
             audio_clips = text_to_speech_chunks(reply)
             return JSONResponse(content={"response": reply, "audio": audio_clips})
 
