@@ -37,7 +37,8 @@ async def root():
 # ✅ Time API
 def get_current_time():
     try:
-        response = requests.get("http://worldtimeapi.org/api/ip")
+        # Force to Central Time (Wausau, WI is in Central)
+        response = requests.get("http://worldtimeapi.org/api/timezone/America/Chicago")
         if response.status_code == 200:
             data = response.json()
             dt_str = data["datetime"]
