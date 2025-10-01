@@ -3,5 +3,5 @@ services:
     name: yuki-cloud-brain
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn -k uvicorn.workers.UvicornWorker main:app --timeout 120
+    startCommand: gunicorn -k uvicorn.workers.UvicornWorker main:app --timeout 180
     plan: starter
