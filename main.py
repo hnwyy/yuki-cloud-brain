@@ -86,7 +86,7 @@ async def chat(user_message: UserMessage):
             reply = get_weather()
             return JSONResponse(content={"response": reply})
 
-        # GPT streaming
+        # ✅ GPT streaming
         full_text = []
         with client.chat.completions.stream(
             model="gpt-4o-mini",
@@ -95,10 +95,9 @@ async def chat(user_message: UserMessage):
                 {"role": "user", "content": user_message.text}
             ]
         ) as stream:
-            for chunk in stream:
-                delta = chunk.choices[0].delta.content or ""
-                if delta:
-                    full_text.append(delta)
+            for event in stream:
+                if event.type == "token":
+                    full_text.append(event.token)
 
         reply = "".join(full_text)
         return JSONResponse(content={"response": reply})
