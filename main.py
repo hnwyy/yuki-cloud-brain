@@ -48,7 +48,18 @@ def get_current_time():
     return None
 
 # ✅ Weather API
-def get_weather(city: str = "New York", units: str = "metric"):
+def get_location_from_ip():
+    try:
+        response = requests.get("http://ip-api.com/json/")
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("city")
+    except Exception as e:
+        print("❌ Location API failed:", str(e))
+    return None
+
+def get_weather(city: str = "New York", units: str = "imperial"):
+    WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
     if not WEATHER_API_KEY:
         return "⚠️ Weather API key not set"
 
@@ -59,7 +70,7 @@ def get_weather(city: str = "New York", units: str = "metric"):
             data = response.json()
             temp = data["main"]["temp"]
             desc = data["weather"][0]["description"]
-            return f"The weather in {city} is {desc} with {temp}°C."
+            return f"The weather in {city} is {desc} with {temp}°F."
     except Exception as e:
         print("❌ Weather API failed:", str(e))
     return "⚠️ Could not fetch weather right now."
@@ -114,12 +125,18 @@ async def chat(user_message: UserMessage):
 
         # Weather
         if "weather" in user_text:
-            city = "New York"
+            # Try to detect a city in the user's request
+            city = None
             words = user_text.split()
             for i, word in enumerate(words):
                 if word.lower() == "in" and i + 1 < len(words):
                     city = words[i + 1].capitalize()
                     break
+
+            # If no city was given, detect from IP
+            if not city:
+                city = get_location_from_ip() or "New York"
+
             reply = get_weather(city=city)
             audio_clips = text_to_speech_chunks(reply)
             return JSONResponse(content={"response": reply, "audio": audio_clips})
